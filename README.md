@@ -209,3 +209,5 @@ streamlit run ui/app.py
 ```bash
 pytest tests/ -v
 ```
+### docker repo
+docker.io/apurvarajput12/hackathon2026-apurva_rajput
