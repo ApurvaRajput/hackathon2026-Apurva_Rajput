@@ -191,7 +191,7 @@ def issue_refund(order_id: str, amount: float) -> Dict:
 
 def send_reply(ticket_id: str, message: str) -> Dict:
     try:
-        print(f"\n📩 Sending reply to Ticket {ticket_id}:")
+        print(f"\n[REPLY] Sending reply to Ticket {ticket_id}:")
         print(message)
 
         return success_response({"message": "Reply sent"})
@@ -202,7 +202,7 @@ def send_reply(ticket_id: str, message: str) -> Dict:
 
 def escalate(ticket_id: str, summary: str, priority: str) -> Dict:
     try:
-        print(f"\n🚨 ESCALATION TRIGGERED")
+        print(f"\n[ESCALATION] TRIGGERED")
         print(f"Ticket: {ticket_id}")
         print(f"Priority: {priority}")
         print(f"Summary: {summary}")

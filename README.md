@@ -1,110 +1,211 @@
-# ShopWave Support Agent - Step 1
+# ShopWave AI Support Agent
 
-Step 1 focuses on **project structure, JSON data loading, and schema validation**.  
-No agent logic, LLM workflow, tools, or API routes are implemented in this stage.
+An AI-powered customer support system that processes tickets end-to-end:
+ticket analysis → tool execution → decision making → reply generation → email notification.
+
+## Environment Variables
+
+Set these in `.env` (copy from `sample.env`):
+
+| Variable | Description | Required | Default |
+|----------|-------------|----------|---------|
+| `OPENAI_API_KEY` | OpenAI API key for LLM features (falls back to heuristics if missing) | No | None |
+| `EMAIL_USER` | SMTP sender email address | Yes for email | "" |
+| `EMAIL_PASSWORD` | SMTP app password/secret | Yes for email | "" |
+| `EMAIL_HOST` | SMTP server (Gmail: smtp.gmail.com) | No | smtp.gmail.com |
+| `EMAIL_PORT` | SMTP port | No | 587 |
+
+**Gmail Setup**: Use App Password (https://myaccount.google.com/apppasswords).
 
 ## Requirements
 
 - Python 3.10+
-- Recommended dependencies:
-  - `pydantic`
-  - `pytest`
-
-Example install:
+- Dependencies:
 
 ```bash
-pip install pydantic pytest
+pip install -r requirements.txt
 ```
 
-## Recommended Folder Structure
+
+## Folder Structure
 
 ```text
 d:/KSolvees Hack/
 ├── app/
 │   ├── __init__.py
-│   ├── config.py
-│   ├── schemas.py
-│   ├── data_loader.py
-│   └── main.py
+│   ├── agent.py            # Core decision engine & orchestrator
+│   ├── api.py              # FastAPI backend
+│   ├── config.py           # Centralised env vars & paths
+│   ├── data_loader.py      # JSON dataset loading & validation
+│   ├── email_service.py    # 📧 SMTP email delivery module
+│   ├── llm.py              # LLM prompts: analysis, reply, email content
+│   ├── memory.py           # Interaction history persistence
+│   ├── schemas.py          # Pydantic data models
+│   ├── tools.py            # Tool functions (get_customer, issue_refund…)
+│   └── main.py             # Smoke-test entry point
 ├── data/
 │   ├── customers.json
 │   ├── orders.json
 │   ├── products.json
 │   └── tickets.json
 ├── tests/
-│   └── test_data_loader.py
+│   ├── test_agent.py       # Agent + email integration tests
+│   └── test_data_loader.py # Data loading tests
+├── ui/
+│   └── app.py              # Streamlit frontend
 ├── docs/
 ├── outputs/
 ├── requirements.txt
 └── README.md
 ```
 
-## Key Files
+## Key Modules
+
+### `app/agent.py`
+Core decision engine. Orchestrates the full pipeline:
+1. Memory retrieval → 2. LLM analysis → 3. Tool execution → 4. Decision → 5. Reply → 6. Memory save → 7. **Email notification**
+
+### `app/llm.py`
+All LLM interactions: `analyze_ticket()`, `generate_reply()`, and `generate_email_content()`.
+Falls back to heuristic logic when no OpenAI key is configured.
+
+### `app/email_service.py`
+SMTP email delivery with TLS, timeout handling, and structured error returns.
 
 ### `app/config.py`
-Centralizes dataset names, filenames, and file paths so the rest of the code avoids hardcoded paths.
+Single source of truth for all environment variables and filesystem paths.
 
-### `app/schemas.py`
-Defines the Pydantic models used to validate data loaded from JSON:
-- `Address`
-- `Customer`
-- `Order`
-- `Product`
-- `Ticket`
-- a container model for all loaded datasets
+---
 
-This is also the right place for lightweight normalization such as lowercasing customer email fields.
+## 📧 Email Notification System
 
-### `app/data_loader.py`
-Implements reusable loading and validation helpers:
-- `load_json(file_path)`
-- `validate_list_of_objects(data, schema, dataset_name)`
-- `load_all_data()` or `load_and_validate_data()`
+### How It Works
 
-Responsibilities:
-- read JSON safely
-- raise clear errors for missing files
-- raise helpful errors for invalid JSON
-- ensure each dataset is a top-level list
-- reject empty datasets
-- validate each item with dataset and index context
-- return one in-memory structured container for reuse
+The email notification module automatically sends a confirmation email to the customer whenever a support ticket is resolved:
 
-### `app/main.py`
-Entry point for a simple Step 1 smoke test. It should load all datasets and print counts plus a success message.
-
-### `tests/test_data_loader.py`
-Pytest coverage for loader and validation behavior using temporary files created with `tmp_path`.  
-Tests should not depend on repository data files.
-
-## Loading Flow
-
-### Pseudocode
-
-```text
-for each dataset in configured dataset paths:
-    raw_data = load_json(path)
-    validated_items = validate_list_of_objects(raw_data, schema, dataset_name)
-collect all validated datasets into one container
-return the container
+```
+Ticket Received
+    ↓
+LLM Analysis (intent, sentiment, fraud)
+    ↓
+Tool Execution (get_customer, get_order, check_refund…)
+    ↓
+Decision Made (approve / deny / escalate / clarify)
+    ↓
+Reply Generated (LLM or heuristic fallback)
+    ↓
+send_reply() → success?
+    ↓ yes
+generate_email_content() → {subject, body}
+    ↓
+send_email() → SMTP delivery
+    ↓
+📧 Email sent to customer@example.com
 ```
 
-## Data Flow
+**Key design rules:**
+- Email is sent **only** after a successful `send_reply()`
+- Email failure is **logged but never raised** — it never crashes the agent
+- Email content is generated by the LLM for a polished, human-like tone
+- When the LLM is unavailable, a heuristic template produces the email
 
-1. JSON files in `data/` are read once.
-2. Raw Python data is parsed from disk.
-3. Each dataset is validated against a Pydantic schema.
-4. Validated objects are grouped into a single container.
-5. The rest of the application can reuse this in-memory data instead of re-reading files.
+### How to Configure Email
 
-## Why This Structure Helps Later
+Set these environment variables before running the application:
 
-This layout keeps the project easy to extend:
+```bash
+# SMTP server settings (defaults to Gmail)
+export EMAIL_HOST=smtp.gmail.com
+export EMAIL_PORT=587
 
-- **config is centralized** so future environments or dataset locations are easy to change
-- **schemas are reusable** for tools, APIs, and agent responses
-- **data loading is isolated** so validation rules stay in one place
-- **tests stay focused** on correctness of file handling and input validation
-- **main stays minimal** and can later be replaced or extended by API/agent entry points
+# Sender credentials — use an App Password for Gmail
+export EMAIL_USER=your-email@gmail.com
+export EMAIL_PASSWORD=your-app-password
+```
 
-That makes Step 2+ work simpler when adding lookup tools like `get_customer()`, `get_order()`, and ticket-driven agent workflows.
+**Gmail setup:**
+1. Enable 2-Factor Authentication on your Google account
+2. Go to https://myaccount.google.com/apppasswords
+3. Generate an App Password for "Mail"
+4. Use that 16-character password as `EMAIL_PASSWORD`
+
+**Other providers (Outlook, SendGrid, etc.):**
+```bash
+export EMAIL_HOST=smtp.office365.com   # or smtp.sendgrid.net
+export EMAIL_PORT=587
+export EMAIL_USER=your-email@provider.com
+export EMAIL_PASSWORD=your-password
+```
+
+### How to Test
+
+Run all tests including email integration tests:
+
+```bash
+pytest tests/test_agent.py -v
+```
+
+Test cases verify:
+| Test | What it checks |
+|------|---------------|
+| `test_email_sent_on_successful_refund` | Full pipeline: refund → reply → email sent, `📧` log printed |
+| `test_email_failure_does_not_crash_agent` | SMTP failure → logged → agent continues |
+| `test_email_exception_does_not_crash_agent` | Unexpected exception → caught → agent continues |
+| `test_no_email_sent_when_reply_fails` | Failed `send_reply()` → no email attempted |
+
+### Sample Output
+
+When a ticket is processed successfully:
+
+```
+[AGENT] Processing Ticket: T-100
+[AGENT] Detected intent: refund
+[AGENT] Order ID: ORD-1001
+[AGENT] Sentiment: neutral
+[AGENT] Fraud flag: False
+[AGENT] Prior interactions: 0
+📧 Email sent to alice@example.com
+```
+
+Sample email content generated:
+
+```json
+{
+  "subject": "Your ShopWave Refund for ORD-1001 Has Been Approved",
+  "body": "Dear Alice,\n\nThank you for reaching out to ShopWave Support regarding your refund request for order ORD-1001.\n\nYour refund of $129.99 has been processed and should appear in your original payment method within 5 to 7 business days.\n\nIf you have any further questions or need additional assistance, please don't hesitate to contact us — we're always happy to help.\n\nWarm regards,\nShopWave Customer Support Team"
+}
+```
+
+### Edge Cases Handled
+
+| Scenario | Behaviour |
+|----------|-----------|
+| Invalid email address | Returns `{"status": "error"}`, no SMTP connection attempted |
+| Missing `EMAIL_USER` / `EMAIL_PASSWORD` | Returns error dict, agent continues |
+| SMTP authentication failure | Caught, logged, agent continues |
+| SMTP timeout (unreachable host) | 10-second timeout, returns error, agent continues |
+| DNS / network failure | Caught via `OSError`, agent continues |
+| LLM email generation fails | Falls back to heuristic template |
+| `send_reply()` itself failed | Email is **not** attempted at all |
+
+---
+
+## Running the Application
+
+### API Server
+
+```bash
+uvicorn app.api:app --reload
+```
+
+### Streamlit UI
+
+```bash
+streamlit run ui/app.py
+```
+
+### Full Test Suite
+
+```bash
+pytest tests/ -v
+```
